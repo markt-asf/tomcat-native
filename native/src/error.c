@@ -83,8 +83,8 @@ void tcn_ThrowAPRException(JNIEnv *e, apr_status_t err)
 {
     jclass aprErrorClass;
     jmethodID constructorID = 0;
-    jobject throwObj = NULL;
-    jstring jdescription = NULL;
+    jobject throwObj;
+    jstring jdescription;
     char serr[512] = {0};
 
     aprErrorClass = (*e)->FindClass(e, TCN_ERROR_CLASS);
@@ -122,11 +122,5 @@ void tcn_ThrowAPRException(JNIEnv *e, apr_status_t err)
 
     (*e)->Throw(e, throwObj);
 cleanup:
-    if (throwObj != NULL) {
-        (*e)->DeleteLocalRef(e, throwObj);
-    }
-    if (jdescription != NULL) {
-        (*e)->DeleteLocalRef(e, jdescription);
-    }
     (*e)->DeleteLocalRef(e, aprErrorClass);
 }
