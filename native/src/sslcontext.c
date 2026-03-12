@@ -1193,6 +1193,7 @@ TCN_IMPLEMENT_CALL(jboolean, SSLContext, addChainCertificateRaw)(TCN_STDARGS, jl
     } else if (SSL_CTX_add0_chain_cert(c->ctx, certs) <= 0) {
         ERR_error_string_n(SSL_ERR_get(), err, TCN_OPENSSL_ERROR_STRING_LENGTH);
         tcn_Throw(e, "Error adding certificate to chain (%s)", err);
+        X509_free(certs);
         rv = JNI_FALSE;
     }
 
@@ -1228,10 +1229,14 @@ TCN_IMPLEMENT_CALL(jboolean, SSLContext, addClientCACertificateRaw)(TCN_STDARGS,
         ERR_error_string_n(SSL_ERR_get(), err, TCN_OPENSSL_ERROR_STRING_LENGTH);
         tcn_Throw(e, "Error encoding allowed peer CA certificate (%s)", err);
         rv = JNI_FALSE;
-    } else if (SSL_CTX_add_client_CA(c->ctx, cert) <= 0) {
-        ERR_error_string_n(SSL_ERR_get(), err, TCN_OPENSSL_ERROR_STRING_LENGTH);
-        tcn_Throw(e, "Error adding allowed peer CA certificate (%s)", err);
-        rv = JNI_FALSE;
+    } else {
+        if (SSL_CTX_add_client_CA(c->ctx, cert) <= 0) {
+            ERR_error_string_n(SSL_ERR_get(), err, TCN_OPENSSL_ERROR_STRING_LENGTH);
+            tcn_Throw(e, "Error adding allowed peer CA certificate (%s)", err);
+            rv = JNI_FALSE;
+        }
+        /* SSL_CTX_add_client_CA makes an internal copy, so always free cert */
+        X509_free(cert);
     }
 
     free(charCert);
@@ -1429,13 +1434,18 @@ static int initProtocols(JNIEnv *e, const tcn_ssl_ctxt_t *c, unsigned char **pro
             p_data_len += 1 + proto_chars_len;
             if (p_data_len > p_data_size) {
                 // double size
+                unsigned char *p_data_start = p_data - (p_data_len - (1 + proto_chars_len));
+                unsigned char *p_data_tmp;
                 p_data_size <<= 1;
-                p_data = realloc(p_data, p_data_size);
-                if (p_data == NULL) {
-                    // Not enough memory?
+                p_data_tmp = realloc(p_data_start, p_data_size);
+                if (p_data_tmp == NULL) {
+                    // Not enough memory? Free the original buffer.
+                    free(p_data_start);
+                    p_data = NULL;
                     (*e)->ReleaseStringUTFChars(e, proto_string, proto_chars);
                     break;
                 }
+                p_data = p_data_tmp + (p_data_len - (1 + proto_chars_len));
             }
             // Write the length of the protocol and then increment before memcpy the protocol itself.
             *p_data = proto_chars_len;
